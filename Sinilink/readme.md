@@ -1,6 +1,7 @@
-I have Sinilink sk150x with original case. It requres some modifications to work much better. 
+# Device
+I have Sinilink sk150x with original case. It requres some modifications to work much better. I think this yaml should work with any Sinilink PSU
 
-#Cooling
+# Cooling
 The unit has two fans, but the second one doesn’t work properly. It is connected to a separate board and takes too long to trigger.
 1. Y-Adapter: I made a Y-adapter to connect both fans to the main board in parallel.
 2. Airflow Direction: I reversed the fan direction. Since swapping the red and black wires doesn't work on these fans, I simply flipped the fan over. Now it intakes cold air into the case. Originally, it was set to exhaust, but that was ineffective. With this mod, the onboard temperature stabilized around 56°C, whereas with the original setup, I had to abort testing when it reached 70°C.
