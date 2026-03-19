@@ -1,0 +1,507 @@
+esphome:
+  name: xy-sk150x
+  friendly_name: Charger XY-SK150X
+
+esp32:
+  board: seeed_xiao_esp32c3
+  variant: esp32c3
+  framework:
+    type: arduino
+    
+  
+
+web_server:
+  port: 80
+  version: 3
+
+light:
+  - platform: status_led
+    name: "Esp32 Status Led"
+    pin: 
+      number: GPIO3
+
+binary_sensor:
+  - platform: gpio
+    pin:
+      number: GPIO2
+      mode: INPUT_PULLUP
+      inverted: true 
+    name: "My Button"
+    internal: true 
+    filters:
+      - delayed_on: 50ms
+    on_press:
+      then:
+        - switch.toggle: master_power_modbus
+
+uart:
+  id: uart_bus
+  tx_pin: GPIO10
+  rx_pin: GPIO9
+  baud_rate: 115200  
+
+modbus:
+  id: mod_bus
+  uart_id: uart_bus
+
+modbus_controller:
+  - id: sk120x
+    address: 0x01
+    setup_priority: -10
+    update_interval: 7s
+    command_throttle: 100ms
+    offline_skip_updates: 2
+
+text_sensor:
+  - platform: modbus_controller
+    modbus_controller_id: sk120x
+    name: "Operating Mode (CV-CC)"
+    address: 0x0011
+    register_type: holding
+    lambda: |-
+      uint16_t val = (data[item->offset] << 8) | data[item->offset + 1]; 
+
+      if (val == 0) {
+        return {"CV"};
+      } else if (val == 1) {
+        return {"CC"};
+      } else {
+        ESP_LOGI("MODBUS", "Invalid Data");
+        return {"Unknown: " + std::to_string(val)};
+      }
+
+  - platform: modbus_controller
+    modbus_controller_id: sk120x
+    name: "Protection Status"
+    address: 0x0010
+    register_type: holding
+    lambda: |-
+      uint16_t val = (data[item->offset] << 8) | data[item->offset + 1]; 
+
+      static const char* const status_map[] = {
+        "Ok",                   // 0
+        "Over Voltage",         // 1
+        "Over Current",         // 2
+        "Over Power",           // 3
+        "Low Input Voltage",    // 4
+        "Over AH",              // 5
+        "Over Time",            // 6
+        "Internal Temperature", // 7
+        "OEP ",                 // 8
+        "Over WH",              // 9
+        "Input Current",        // 10
+        "Extermal Temperature"  // 11
+      };
+
+      if (val >= 0 && val <= 11) {
+        return {status_map[val]};
+      } else {
+        ESP_LOGI("MODBUS", "Invalid Data");
+        return {std::to_string(val)};
+      }
+
+sensor:
+  - platform: wifi_signal # Reports the WiFi signal strength/RSSI in dB
+    name: "Esp32 WiFi Signal dB"
+    id: wifi_signal_db
+    update_interval: 60s
+    entity_category: diagnostic
+    
+  - platform: modbus_controller
+    modbus_controller_id: sk120x
+    name: "External Temperature"
+    address: 0x000E
+    register_type: holding
+    value_type: U_WORD
+    unit_of_measurement: "°C"
+    accuracy_decimals: 1
+    filters:
+      - multiply: 0.1
+
+  - platform: modbus_controller
+    modbus_controller_id: sk120x
+    name: "Firmware Version"
+    address: 0x0017
+    register_type: holding
+    value_type: U_WORD
+    accuracy_decimals: 2
+    filters:
+      - multiply: 0.01
+      - round: 2
+    state_class: "measurement"
+    entity_category: diagnostic
+
+  - platform: modbus_controller
+    modbus_controller_id: sk120x
+    name: "Model ID"
+    address: 0x0016
+    register_type: holding
+    value_type: U_WORD
+    entity_category: diagnostic
+
+  - platform: modbus_controller
+    modbus_controller_id: sk120x
+    name: "Measured Output Voltage"
+    address: 0x0002
+    register_type: holding
+    value_type: U_WORD
+    unit_of_measurement: "V"
+    accuracy_decimals: 2
+    filters:
+      - multiply: 0.01
+
+  - platform: modbus_controller
+    modbus_controller_id: sk120x
+    name: "Measured Output Current"
+    address: 0x0003
+    register_type: holding
+    value_type: U_WORD
+    unit_of_measurement: "A"
+    accuracy_decimals: 3
+    filters:
+      - multiply: 0.001
+
+  - platform: modbus_controller
+    modbus_controller_id: sk120x
+    name: "Measured Output Power"
+    address: 0x0004
+    register_type: holding
+    value_type: U_WORD
+    unit_of_measurement: "W"
+    accuracy_decimals: 2
+    filters:
+      - multiply: 0.01
+
+  - platform: modbus_controller
+    modbus_controller_id: sk120x
+    name: "Input Voltage"
+    address: 0x0005
+    register_type: holding
+    value_type: U_WORD
+    unit_of_measurement: "V"
+    accuracy_decimals: 2
+    filters:
+      - multiply: 0.01
+    entity_category: diagnostic
+
+  - platform: modbus_controller
+    modbus_controller_id: sk120x
+    name: "Capacity"
+    address: 0x0006
+    register_type: holding
+    value_type: U_DWORD_R
+    unit_of_measurement: "Ah"
+    accuracy_decimals: 3
+    filters:
+      - multiply: 0.001
+
+  - platform: modbus_controller
+    modbus_controller_id: sk120x
+    name: "Energy"
+    address: 0x0008
+    register_type: holding
+    value_type: U_DWORD_R
+    unit_of_measurement: "Wh"
+    accuracy_decimals: 3
+    filters:
+      - multiply: 0.01
+
+#
+#  - platform: modbus_controller
+#    modbus_controller_id: sk120x
+#    name: "Runtime Hours"
+#    address: 0x000A
+#    register_type: holding
+#    value_type: U_WORD
+#    unit_of_measurement: "h"
+#    accuracy_decimals: 0
+
+#  - platform: modbus_controller
+#    modbus_controller_id: sk120x
+#    name: "Runtime Minutes"
+#    address: 0x000B
+#    register_type: holding
+#    value_type: U_WORD
+#    unit_of_measurement: "m"
+#    accuracy_decimals: 0
+
+#  - platform: modbus_controller
+#    modbus_controller_id: sk120x
+#    name: "Runtime Seconds"
+#    address: 0x000C
+#    register_type: holding
+#    value_type: U_WORD
+#    unit_of_measurement: "s"
+#    accuracy_decimals: 0
+
+  - platform: modbus_controller
+    modbus_controller_id: sk120x
+    name: "Runtime"
+    address: 0x000A
+    register_type: holding
+    value_type: RAW
+    register_count: 3
+    unit_of_measurement: "s"
+    device_class: duration
+    accuracy_decimals: 0
+    lambda: |-
+      size_t start = item->offset;
+      uint16_t h = (data[start + 0] << 8) | data[start + 1];
+      uint16_t m = (data[start + 2] << 8) | data[start + 3];
+      uint16_t s = (data[start + 4] << 8) | data[start + 5];
+      
+      return (float)((h * 3600) + (m * 60) + s);
+
+  - platform: modbus_controller
+    modbus_controller_id: sk120x
+    name: "Onboard Temperature"
+    address: 0x000D
+    register_type: holding
+    value_type: U_WORD
+    unit_of_measurement: "°C"
+    accuracy_decimals: 1
+    filters:
+      - multiply: 0.1
+    entity_category: diagnostic
+
+number:
+  - platform: modbus_controller
+    modbus_controller_id: sk120x
+    name: "_Target Voltage"
+    address: 0x0000
+    register_type: holding
+    value_type: U_WORD
+    min_value: 0
+    max_value: 40
+    step: 0.01
+    multiply: 100
+
+  - platform: modbus_controller
+    modbus_controller_id: sk120x
+    name: "_Target Current Limit"
+    address: 0x0001
+    register_type: holding
+    value_type: U_WORD
+    min_value: 0
+    max_value: 8.1
+    step: 0.1
+    multiply: 1000
+
+  - platform: modbus_controller
+    modbus_controller_id: sk120x
+    name: "LCD Brightness"
+    address: 0x0014
+    register_type: holding
+    value_type: U_WORD
+    min_value: 1
+    max_value: 5
+    step: 1
+
+  - platform: modbus_controller
+    modbus_controller_id: sk120x
+    name: "Rest screen time"
+    address: 0x0015
+    register_type: holding
+    value_type: U_WORD
+    min_value: 0
+    max_value: 720
+    step: 1
+
+  - platform: modbus_controller
+    modbus_controller_id: sk120x
+    name: "Low Voltage Protection (LVP)"
+    address: 0x0052
+    register_type: holding
+    value_type: U_WORD
+    min_value: 0
+    max_value: 42
+    step: 0.1
+    multiply: 100
+    unit_of_measurement: "V"
+
+  - platform: modbus_controller
+    modbus_controller_id: sk120x
+    name: "Over Voltage Protection (OVP)"
+    address: 0x0053
+    register_type: holding
+    value_type: U_WORD
+    min_value: 0
+    max_value: 42
+    step: 0.1
+    multiply: 100
+    unit_of_measurement: "V"
+
+  - platform: modbus_controller
+    modbus_controller_id: sk120x
+    name: "Over Current Protection (OCP)"
+    address: 0x0054
+    register_type: holding
+    value_type: U_WORD
+    min_value: 0
+    max_value: 8.2
+    step: 0.01
+    multiply: 1000
+    unit_of_measurement: "A"
+
+  - platform: modbus_controller
+    modbus_controller_id: sk120x
+    name: "Over Power Protection (OPP)"
+    address: 0x0055
+    register_type: holding
+    value_type: U_WORD
+    min_value: 0
+    max_value: 180
+    step: 1
+    multiply: 10
+    unit_of_measurement: "W"
+
+  - platform: modbus_controller
+    modbus_controller_id: sk120x
+    name: "Max Output Hours"
+    address: 0x0056
+    register_type: holding
+    value_type: U_WORD
+    min_value: 0
+    step: 1
+    max_value: 99
+    unit_of_measurement: "h"
+
+  - platform: modbus_controller
+    modbus_controller_id: sk120x
+    name: "Max Output Minutes"
+    address: 0x0057
+    register_type: holding
+    value_type: U_WORD
+    min_value: 0
+    max_value: 59
+    step: 1
+    unit_of_measurement: "m"
+
+
+  - platform: modbus_controller
+    modbus_controller_id: sk120x
+    name: "Max Output AH"
+    address: 0x0058
+    register_type: holding
+    value_type: U_DWORD_R
+    min_value: 0
+    step: 1
+    unit_of_measurement: "Ah"
+    multiply: 1000
+
+  - platform: modbus_controller
+    modbus_controller_id: sk120x
+    name: "Max Output WH"
+    address: 0x005A
+    register_type: holding
+    value_type: U_DWORD_R
+    min_value: 0
+    step: 1
+    unit_of_measurement: "Wh"
+    multiply: 100
+
+
+  - platform: modbus_controller
+    modbus_controller_id: sk120x
+    name: "Over Temp Protection (OTP)"
+    address: 0x005C
+    register_type: holding
+    value_type: U_WORD
+    min_value: 60
+    max_value: 110
+    step: 1
+    unit_of_measurement: "C"
+
+#  - platform: modbus_controller
+#    modbus_controller_id: sk120x
+#    name: "Quick Data Group"
+#    address: 0x001D
+#    register_type: holding
+#    value_type: U_WORD
+#    min_value: 0
+#    max_value: 9
+#    step: 1
+
+select:
+  - platform: modbus_controller
+    modbus_controller_id: sk120x
+    name: "Presets"
+    optimistic: true
+    address: 0x001D
+    optionsmap:
+      "Preset 0": 0
+      "Preset 1": 1
+      "Preset 2": 2
+      "Preset 3": 3
+      "Preset 4": 4
+      "Preset 5": 5
+      "Preset 6": 6
+      "Preset 7": 7
+      "Preset 8": 8
+      "Preset 9": 9
+switch:
+  - platform: modbus_controller
+    modbus_controller_id: sk120x
+    id: master_power_modbus
+    name: "! Master Power"
+    address: 0x001E
+    register_type: holding
+    bitmask: 1
+    icon: "mdi:power"
+    inverted: true      # 1 is off. 0 is on
+    write_lambda: |-    # Send 1 to turn ON. # Chinese perfomance. Do not ask why it is work :) 
+      return x ? 0 : 1;
+    on_turn_on: 
+      - script.execute: force_sync
+    on_turn_off: 
+      - script.execute: force_sync
+
+  - platform: modbus_controller
+    modbus_controller_id: sk120x
+    name: "! Output"
+    address: 0x0012
+    register_type: holding
+    bitmask: 1
+    
+  - platform: modbus_controller
+    modbus_controller_id: sk120x
+    name: "Key Lock"
+    address: 0x000F
+    register_type: holding
+    bitmask: 1
+
+  - platform: modbus_controller
+    modbus_controller_id: sk120x
+    name: "Buzzer Switch"
+    address: 0x001C
+    register_type: holding
+    bitmask: 1
+
+  - platform: modbus_controller
+    modbus_controller_id: sk120x
+    name: "MPPT Switch"
+    address: 0x001F
+    register_type: holding
+    bitmask: 1
+
+  - platform: modbus_controller
+    modbus_controller_id: sk120x
+    name: "Constant Power Mode"
+    address: 0x0022
+    register_type: holding
+    bitmask: 1
+
+
+  - platform: modbus_controller
+    modbus_controller_id: sk120x
+    name: "Power on Boot"
+    address: 0x005D
+    register_type: holding
+    bitmask: 1
+
+script:
+  - id: force_sync
+    mode: restart
+    then:
+      - delay: 100ms 
+      - component.update: sk120x
