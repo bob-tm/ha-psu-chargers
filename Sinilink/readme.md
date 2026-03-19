@@ -1,5 +1,10 @@
 # Device
-I have Sinilink sk150x with original case. It requres some modifications to work much better. I think this yaml should work with any Sinilink PSU
+I have Sinilink sk150x with original case. It requres some modifications to work much better. I think this yaml can work with any Sinilink PSU with minimal modifications. 
+
+# Hardware
+Connector is jst 1.25mm
+
+I'm using an ESP32-C3 with RX, TX, GND, and 5V connected. My setup also includes an optional button and LED. I added a 220µF capacitor to the 5V line, which massively reduced power noise, especially while the fan is running.
 
 # Cooling
 The unit has two fans, but the second one doesn’t work properly. It is connected to a separate board and takes too long to trigger.
@@ -16,6 +21,5 @@ I use an ESP32-C3 with ESPHome to control the unit. I have implemented and teste
     - Power on -> Master Switch ON -> Output Enabled.
     - Power on -> Master Switch ON -> Output Disabled.
     - Power on -> Master Switch OFF -> Output Disabled.
-It seems that if the Master Switch is off, "Power on Boot" applies to the switch itself; if it's on, it applies to the Output. The most reliable method is to default everything to "OFF" and let the ESP32 handle the power-up sequence (not preset in this config)
-
-3. Modbus Stability: I occasionally see data spikes or "garbage" values. This appears to be a Modbus bug (invalid data with a valid CRC). I haven't found a perfect software fix, but applying filters in ESPHome for critical parameters can help to stabilize the readings.
+      
+    It seems that if the Master Switch is off, "Power on Boot" applies to the switch itself; if it's on, it applies to the Output. The most reliable method is to default everything to "OFF" and let the ESP32 handle the power-up sequence (not preset in this config)
