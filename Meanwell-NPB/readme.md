@@ -24,6 +24,12 @@ I need a Power Supply Unit (PSU) connected in parallel with my battery to work 2
 1. My config can be used to change way more params and read almost everything available sensors.
 2. It has 3 stage Charger emulation (Boost Charger in PSU Mode).
 
+# Install
+1. Copy yaml to ESPHome builder (\\homeassistan.local\config\esphome\)
+2. do not forget to copy packages folder
+3. Setup GPIO and Board params.
+4. Install
+   
 # NPB Hardware limitations
 1. PSU and Charger modes can be changed only by cycling the AC power. You can add a remote-controlled socket to automate this.
 2. For the 12V model, the minimum voltage is 10.5V. If you connect a load that drops the voltage below 10.5V, the unit will trigger Overload Protection and shut down the output. While this is unlikely with a live battery connected, high loads without a buffer battery can trigger errors. The output voltage must remain above 77% of the target voltage in PSU mode and 55% in Charger mode.
