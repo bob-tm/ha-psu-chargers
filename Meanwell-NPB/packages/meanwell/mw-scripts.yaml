@@ -1,0 +1,399 @@
+- id: eeprom_writing_action
+  mode: queued
+  parameters:
+    state: bool
+  then:
+    - if:
+        condition:
+            # at boot esphome try to init params 
+            - lambda: 'return (millis() > 5000);'
+        then:      
+            - canbus.send:
+                use_extended_id: true
+                can_id: 0xC0103
+                data: !lambda "return prepare_can_packet_set_bit(0xC2, 10, id(mw_config_c2), state);"
+            - delay: 50ms
+            - script.execute: { id: canbus_refresh, cmd: 0xC2 }
+
+- id: psu_mode_action
+  mode: queued
+  parameters:
+    state: bool
+  then:
+    - if:
+        condition:
+            # at boot esphome try to init params 
+            - lambda: 'return (millis() > 5000);'
+        then:      
+            - canbus.send:
+                use_extended_id: true
+                can_id: 0xC0103
+                data: !lambda "return prepare_can_packet_set_bit(0xB4, 7, id(mw_config_b4), state);"
+            - delay: 50ms
+            - script.execute: { id: canbus_refresh, cmd: 0xB4 }
+
+
+- id: canbus_refresh
+  mode: queued
+  parameters:
+    cmd: int  # Указываем, что параметр 'cmd' имеет тип целое число
+  then:
+    - canbus.send:
+          use_extended_id: true
+          can_id: 0xC0103
+          data: !lambda |-
+            return { (uint8_t)cmd, 0x00 };
+    - delay: 50ms
+          
+          
+- id: canbus_read_vendor_info
+  mode: queued
+  then:
+      - canbus.send:
+          use_extended_id: true
+          can_id: 0xC0103
+          data: [0x80, 0x00]  #Manufacturer name 0_5
+      - delay: 50ms # delay between sends minimum 30 ms to allow for receiving of the result to happen
+      - canbus.send:
+          use_extended_id: true
+          can_id: 0xC0103
+          data: [0x81, 0x00]  #Manufacturer name 6_11
+      - delay: 50ms
+      - canbus.send:
+          use_extended_id: true
+          can_id: 0xC0103
+          data: [0x82, 0x00]  #Model name 0_5
+      - delay: 50ms
+      - canbus.send:
+          use_extended_id: true
+          can_id: 0xC0103
+          data: [0x83, 0x00]  #Model name 6_11
+      - delay: 50ms
+      - canbus.send:
+          use_extended_id: true
+          can_id: 0xC0103
+          data: [0x84, 0x00]  #Firmware
+      - delay: 50ms
+      - canbus.send:
+          use_extended_id: true
+          can_id: 0xC0103
+          data: [0x85, 0x00]  #Factory
+      - delay: 50ms
+      - canbus.send:
+          use_extended_id: true
+          can_id: 0xC0103
+          data: [0x86, 0x00]  #Manufacture Date
+      - delay: 50ms
+      - canbus.send:
+          use_extended_id: true
+          can_id: 0xC0103
+          data: [0x87, 0x00]  #Serial 0_5
+      - delay: 50ms
+      - canbus.send:
+          use_extended_id: true
+          can_id: 0xC0103
+          data: [0x88, 0x00]  #Serial 6_11
+      - delay: 50ms
+
+- id: canbus_charging_params
+  mode: queued
+  then:
+      - canbus.send:
+          use_extended_id: true
+          can_id: 0xC0103
+          data: [0xB0, 0x00]        # CURVE_CC
+      - delay: 50ms 
+      - canbus.send:
+          use_extended_id: true
+          can_id: 0xC0103           
+          data: [0xB1, 0x00]        # CURVE_CV
+      - delay: 50ms
+      - canbus.send:
+          use_extended_id: true
+          can_id: 0xC0103
+          data: [0xB2, 0x00]        # CURVE_FV
+      - delay: 50ms
+      - canbus.send:
+          use_extended_id: true
+          can_id: 0xC0103
+          data: [0xB3, 0x00]        # CURVE_TC
+      - delay: 50ms
+      - canbus.send:
+          use_extended_id: true
+          can_id: 0xC0103
+          data: [0xB5, 0x00]        # CURVE_CC_TIMEOUT
+      - delay: 50ms
+      - canbus.send:
+          use_extended_id: true
+          can_id: 0xC0103
+          data: [0xB6, 0x00]        # CURVE_CV_TIMEOUT
+      - delay: 50ms
+      - canbus.send:
+          use_extended_id: true
+          can_id: 0xC0103
+          data: [0xB7, 0x00]        # CURVE_FV_TIMEOUT
+      - delay: 50ms
+      - canbus.send:
+          use_extended_id: true
+          can_id: 0xC0103
+          data: [0xC1, 0x00]        # System Status
+      - delay: 50ms
+      
+- id: canbus_read_priority1
+  mode: queued
+  then:
+      - canbus.send:
+          use_extended_id: true
+          can_id: 0xC0103
+          data: [0x00, 0x00]        # ON / OFF
+      - delay: 50ms # delay between sends minimum 30 ms to allow for receiving of the result to happen
+      - canbus.send:
+          use_extended_id: true
+          can_id: 0xC0103
+          data: [0x40, 0x00]        # Abnormal status
+      - delay: 50ms
+      - canbus.send:
+          use_extended_id: true
+          can_id: 0xC0103
+          data: [0x60, 0x00]        # Voltage
+      - delay: 50ms
+      - canbus.send:
+          use_extended_id: true
+          can_id: 0xC0103
+          data: [0x61, 0x00]        # Current
+      - delay: 50ms
+      - canbus.send:
+          use_extended_id: true
+          can_id: 0xC0103
+          data: [0xC1, 0x00]        # System Status
+      - delay: 50ms
+      - canbus.send:
+          use_extended_id: true
+          can_id: 0xC0103
+          data: [0xB8, 0x00]        # Charging Status
+      - delay: 50ms          
+      
+- id: canbus_read_priority2
+  mode: queued
+  then:
+      - canbus.send:
+          use_extended_id: true
+          can_id: 0xC0103           
+          data: [0x20, 0x00]        # Voltage Settings
+      - delay: 50ms
+      - canbus.send:
+          use_extended_id: true
+          can_id: 0xC0103
+          data: [0x30, 0x00]        # Current Settigs
+      - delay: 50ms
+      - canbus.send:
+          use_extended_id: true
+          can_id: 0xC0103
+          data: [0x62, 0x00]        # Temperature
+      - delay: 50ms
+      - canbus.send:
+          use_extended_id: true
+          can_id: 0xC0103
+          data: [0xB4, 0x00]        # Charger / PSU Mode
+      - delay: 50ms
+      - canbus.send:
+          use_extended_id: true
+          can_id: 0xC0103 
+          data: [0xC2, 0x00]        # System Config
+      - delay: 50ms
+      - canbus.send:
+          use_extended_id: true
+          can_id: 0xC0103
+          data: [0x50, 0x00]        # AC Voltage
+      - delay: 50ms
+
+
+- id: canbus_set_param_int
+  mode: queued
+  parameters:
+    x: int
+    cmd: int
+  then:
+    - if:
+        condition:
+        # at boot esphome try to set min value for some params 
+         - lambda: 'return (millis() > 3000);'
+        then:    
+            - canbus.send:
+                use_extended_id: true
+                can_id: 0xC0103
+                data: !lambda |-
+                  ESP_LOGI("СAN_WRITE", "CAN: cmd=%x, x=%d", cmd, x);
+                  
+                  uint16_t scaled_x = (uint16_t)(x);
+                  uint8_t b2 = (uint8_t)(scaled_x % 256);
+                  uint8_t b3 = (uint8_t)(scaled_x / 256);
+                  
+                  ESP_LOGD("СAN_WRITE", "[0]=0x%02X, [2]=0x%02X, [3]=0x%02X", cmd, b2, b3);
+                  
+                  return {(uint8_t)cmd, 0x00, b2, b3};
+            - delay: 50ms
+
+
+- id: canbus_set_param_f001
+  mode: queued
+  parameters:
+    x: float
+    cmd: int
+  then:
+    - if:
+        condition:
+        # at boot esphome try to set min value for some params 
+         - lambda: 'return (millis() > 3000);'
+        then:      
+            - canbus.send:
+                use_extended_id: true
+                can_id: 0xC0103
+                data: !lambda |-
+                  ESP_LOGI("СAN_WRITE", "CAN: cmd=%x, x=%.2f", cmd, x);
+                  
+                  uint16_t scaled_x = (uint16_t)(x * 100.0);
+                  uint8_t b2 = (uint8_t)(scaled_x % 256);
+                  uint8_t b3 = (uint8_t)(scaled_x / 256);
+                  
+                  ESP_LOGD("СAN_WRITE", "[0]=0x%02X, [2]=0x%02X, [3]=0x%02X", cmd, b2, b3);
+                  
+                  return {(uint8_t)cmd, 0x00, b2, b3};
+            - delay: 50ms
+    
+- id: canbus_set_bit
+  mode: queued
+  parameters:
+    cmd: int
+    bit: int   # 0..7 - low bytw. 8..15 - hight
+    conf: int
+    val: bool  # true / false
+  then:
+    - if:
+        condition:
+        # at boot esphome try to set min value for some params 
+         - lambda: 'return (millis() > 3000);'
+        then:      
+            - canbus.send:
+                use_extended_id: true
+                can_id: 0xC0103
+                data: !lambda |-
+                  uint16_t new_config = (uint16_t)conf; 
+                  
+                  if (val) {
+                    new_config |= (1U << bit);
+                  } else {
+                    new_config &= ~(1U << bit);
+                  }
+                  uint8_t b2 = (uint8_t)(new_config % 256);
+                  uint8_t b3 = (uint8_t)(new_config / 256);
+                  
+                  ESP_LOGI("SETBIT", "Config 0x%02X: %04X -> %04X", cmd, conf, new_config);
+         
+                  return {(uint8_t)cmd, 0x00, b2, b3};
+            - delay: 50ms 
+                
+- id: psu_charger_boost_loop
+  mode: restart
+  then: 
+    - if:
+        condition:
+          - switch.is_on: psu_charger_boost_master
+        then:
+          - lambda: |-
+              // Emulate 3 stage method
+              // stage 1 - Const Current
+              // stage 2 - Boosted to 14.2 Const Voltage
+              // Stage 3 - Float 13.6 Voltage
+
+
+              float v_now   = id(meanwell_measured_voltage_filtered).state;
+              float a_now   = id(meanwell_measured_current).state;
+
+
+              // PSU mode protection
+              if (!(id(power_psu_mode).state)) {
+                ESP_LOGI("charger", "Boost Disabled. Enable PSU mode First and turn ON/OFF the unit via manual switch!");
+                id(psu_charger_status).publish_state("Float (PSU not Enabled)");
+                id(psu_charger_boost_master).turn_off();
+                return;
+              }
+
+
+              // NO load protection
+              if (a_now < 1.0f) {
+                ESP_LOGI("charger", "Boost Disabled. Voltage %.2fV,  %.2fA", v_now, a_now);
+                id(psu_charger_status).publish_state("Float (Low Load)");
+                id(psu_charger_boost_master).turn_off();
+                return;
+              }
+
+              // Stage 0. Init
+              if (id(psu_charger_status).state == "Start Bulk Charger") {
+                id(psu_charger_stage1_cc_start_ms) = millis();
+                id(psu_charger_status).publish_state("Bulk (CC)");
+                auto call = id(meanwell_next_target_voltage).make_call();
+                call.set_value(id(mw_curve_cv).state);
+                call.perform();
+                ESP_LOGI("charger", "Start Bulk charge with %.2fV. ", id(mw_curve_cv).state);
+                return;
+              }
+
+
+              // Stage 3. Float
+              /* this code not tested
+              std::string status = id(psu_charger_status).state;
+              if (status.find("Float") != std::string::npos) {
+                  // if voltage drops bellow 13.2V (high load), returns to Bulk
+                  if (v_now < 13.2f) {
+                    ESP_LOGI("charger", "Voltage dropped to %.2fV. Re-starting Bulk charge.", v_now);
+                    id(psu_charger_status).publish_state("Bulk (CC)");
+                    id(psu_charger_stage1_cc_start_ms) = 0;
+                    id(psu_charger_cv_confirm_counter) = 0;
+                  }
+                  
+                  return;
+              }
+              */
+
+              // stage 2
+              if (id(psu_charger_status).state == "Absorption") {
+                  uint32_t max_boost_ms = id(psu_charger_stage2_max_time).state * 60000;
+                  float a_stop_threshold = id(mw_curve_tc).state;
+
+                  uint32_t elapsed  = millis() - id(psu_charger_stage2_cv_start_ms);
+                  bool timeout      = (elapsed > max_boost_ms) && (max_boost_ms>0);
+                  bool current_low  = a_now < a_stop_threshold;
+
+                  ESP_LOGW("charger", "Absorption: T: %umin/%umin, A: %.2f/%.2f", 
+                                    elapsed/60000, max_boost_ms/60000, a_now, a_stop_threshold);
+
+                  // Stage2 -> Stage3 Detection
+                  if (timeout || current_low) {
+                      ESP_LOGI("charger", "Switching to FLOAT. Reason: %s", timeout ? "Timer" : "Low Current");
+
+                      id(psu_charger_boost_master).turn_off();                      
+                      id(psu_charger_status).publish_state(timeout ? "Float (Timeout)" : "Float (Full)");
+                  }
+              }
+              // stage 1
+              else if (id(psu_charger_status).state == "Bulk (CC)") {
+                  float v_boost = id(mw_curve_cv).state;
+
+                  if ( v_now >= (v_boost - 0.1f)) {
+                      id(psu_charger_cv_confirm_counter)++;
+                      ESP_LOGW("charger", "Voltage threshold reached. Confirming: %d/6", id(psu_charger_cv_confirm_counter));
+                  } else {
+                      id(psu_charger_cv_confirm_counter) = 0;
+                  }
+
+                  // psu_charger_cv_confirm_counter valid for 30 seconds
+                  // Stage1 -> Stage2 Detection
+                  if (id(psu_charger_cv_confirm_counter) >= 6) {
+                      ESP_LOGI("charger", "Bulk finished at %.2fV. Starting Absorption timer.", v_now);
+                      id(psu_charger_status).publish_state("Absorption");
+                      id(psu_charger_stage2_cv_start_ms) = millis();
+                  } else {
+                    ESP_LOGW("charger", "Bulk CC: %.2fV < %.2fV, %.2fA", v_now, v_boost-0.1f, a_now);
+                  }
+              }

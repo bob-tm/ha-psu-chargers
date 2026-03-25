@@ -1,0 +1,744 @@
+script: !include mw-scripts.yaml
+
+esphome:
+  name: ${esphome_name}
+
+  includes:
+    - packages/meanwell/mw-helpers.h
+
+  on_boot:       
+      - priority: -100
+        then:
+          - component.update: build_time
+          - text_sensor.template.publish:
+              id: psu_charger_status
+              state: "Idle"
+          - delay: 5s 
+          - script.execute: {id: canbus_read_vendor_info}
+          - delay: 50ms
+          #- if:
+          #    condition:
+          #      - switch.is_on: autostart_switch
+          #    then:
+          #      - switch.turn_on: main_power              # PowerON via PINS
+          #      - switch.turn_on: power_meanwell_button   # PowerON via CAN
+          #      - delay: 50ms
+        
+globals:
+  - id: mw_string_buffer
+    type: std::string
+    initial_value: '""'
+
+  - id: mw_config_c2
+    type: uint16_t
+    initial_value: '0'
+    
+  - id: mw_config_b4
+    type: uint16_t
+    initial_value: '0'
+
+  - id: mw_config_b8
+    type: uint16_t
+    initial_value: '0'
+
+  - id: psu_autostart_voltage
+    type: float
+    initial_value: '0'
+    
+    
+  - id: psu_charger_stage1_cc_start_ms
+    type: uint32_t
+    initial_value: '0'
+
+  - id: psu_charger_stage2_cv_start_ms
+    type: uint32_t
+    initial_value: '0'
+
+  # used to detect CC to CV stage change
+  - id: psu_charger_cv_confirm_counter
+    type: int
+    initial_value: '0'
+
+    
+number:
+  - platform: template
+    name: "Boost Charger Stage 2 (Boost CV) Max Time"
+    id: psu_charger_stage2_max_time
+    optimistic: true
+    unit_of_measurement: "Min"
+    restore_value: true
+    initial_value: 0  
+    min_value: 0
+    max_value: 360
+    step     : 5
+
+  - platform: template
+    name: "_PSU target current"
+    id: meanwell_next_target_current
+    optimistic: true
+    set_action:
+      - script.execute: {id: canbus_set_param_f001, cmd: 0x30, x: !lambda "return x;"}
+      - script.execute: canbus_read_priority2
+    unit_of_measurement: "A"
+    min_value: ${min_current}
+    max_value: ${max_current}
+    step: ${step_current}
+
+  - platform: template
+    name: "_PSU target voltage"
+    id: meanwell_next_target_voltage
+    optimistic: true
+    set_action:  
+      - lambda: 'ESP_LOGI("PSU_SET_VOLTAGE", "Set PSU Target Voltage to %.2fV. ", x);'
+      - script.execute: {id: canbus_set_param_f001, cmd: 0x20, x: !lambda "return x;"}
+      - script.execute: canbus_read_priority2
+    unit_of_measurement: "V"
+    min_value: ${min_voltage}
+    max_value: ${max_voltage}
+    step: ${step_voltage}
+
+  - platform: template
+    name: Charge Const Current
+    id: mw_curve_cc
+    optimistic: true
+    set_action:
+      - script.execute: {id: canbus_set_param_f001, cmd: 0xB0, x: !lambda "return x;"}
+      - delay: 50ms
+      - script.execute: canbus_charging_params
+    unit_of_measurement: "A"
+    min_value: ${min_current}
+    max_value: ${max_current}
+    step: ${step_current}
+
+  - platform: template
+    name: Charge Const Voltage
+    id: mw_curve_cv
+    optimistic: true
+    set_action:
+      - script.execute: {id: canbus_set_param_f001, cmd: 0xB1, x: !lambda "return x;"}
+      - delay: 50ms
+      - script.execute: canbus_charging_params
+    unit_of_measurement: "V"
+    min_value: ${min_voltage}
+    max_value: ${max_voltage}
+    step: ${step_voltage}
+
+  - platform: template
+    name: Charge Float Voltage
+    id: mw_curve_fv
+    optimistic: true
+    set_action:
+      - script.execute: {id: canbus_set_param_f001, cmd: 0xB2, x: !lambda "return x;"}
+      - delay: 50ms
+      - script.execute: canbus_charging_params
+    unit_of_measurement: "V"
+    min_value: ${min_voltage}
+    max_value: ${max_voltage}
+    step: ${step_voltage}
+
+  - platform: template
+    name: Charge Taper Current
+    id: mw_curve_tc
+    optimistic: true
+    set_action:
+      - script.execute: {id: canbus_set_param_f001, cmd: 0xB3, x: !lambda "return x;"}
+      - delay: 50ms
+      - script.execute: canbus_charging_params
+    unit_of_measurement: "A"
+    min_value: ${min_current}
+    max_value: ${max_current}
+    step: ${step_current}
+
+  - platform: template
+    name: Charge timout CC 
+    id: mw_timeout_cc
+    optimistic: true
+    set_action:
+      - script.execute: {id: canbus_set_param_int, cmd: 0xB5, x: !lambda "return x;"}
+      - delay: 50ms
+      - script.execute: canbus_charging_params
+    unit_of_measurement: "Min"
+    min_value: ${min_timeout}
+    max_value: ${max_timeout}
+    step     : ${step_timeout}
+
+  - platform: template
+    name: Charge timout CV
+    id: mw_timeout_cv
+    optimistic: true
+    set_action:
+      - script.execute: {id: canbus_set_param_int, cmd: 0xB6, x: !lambda "return x;"}
+      - delay: 50ms
+      - script.execute: canbus_charging_params
+    unit_of_measurement: "Min"
+    min_value: ${min_timeout}
+    max_value: ${max_timeout}
+    step     : ${step_timeout}
+
+  - platform: template
+    name: Charge timout FV
+    id: mw_timeout_fv
+    optimistic: true
+    set_action:
+      - script.execute: {id: canbus_set_param_int, cmd: 0xB7, x: !lambda "return x;"}
+      - delay: 50ms
+      - script.execute: canbus_charging_params
+    unit_of_measurement: "Min"
+    min_value: ${min_timeout}
+    max_value: ${max_timeout}
+    step     : ${step_timeout}
+
+# this button if pressed in home assitant initializes the meanwell to become a power supply
+# this usually has to be done only once and then the power supply should be turned off and on to accept the setting
+# if in doubt check the flags if eeprom writing is off and if the mode is power supply or not
+# the device will not be in "ready" state until these settings have been made
+button:
+  - platform: template
+    name: PSU and EEPROM Off (AC ON-OFF to Apply)
+    id: initialize_meanwell_button
+    on_press:
+      - logger.log: Button Pressed
+      - switch.turn_on: power_psu_mode  # this switches to power supply mode, turn off and on is required to make this real
+      - delay: 200ms
+      - switch.turn_off: eeprom_writing # this turns the eeprom writing off, turn off and on is required to make this real
+      - delay: 100ms  
+
+  - platform: restart
+    name: "Esp32 Restart"
+
+  - platform: template
+    name: "Read All Can Bus Params"
+    id: read_all_can_bus
+    on_press:
+      - script.execute:
+          id: canbus_read_vendor_info
+      - script.execute:
+          id: canbus_read_priority1
+      - script.execute:
+          id: canbus_read_priority2
+      - script.execute:
+          id: canbus_charging_params
+
+    entity_category: diagnostic
+
+ 
+
+switch:
+  #- platform: template
+  #  name: "Autostart"
+  #  id: autostart_switch
+  #  restore_mode: RESTORE_DEFAULT_ON
+  #  optimistic: true
+    #on_turn_on:
+    #  - if:
+    #      condition:
+    #        lambda: 'return millis() > 5000;'
+    #      then:    
+    #         - logger.log: "on_turn_on do_autostart"
+    #         - script.execute: {id: do_autostart}
+    #on_turn_off:
+    #  then:
+    #    - switch.turn_off: main_power              # PowerOFF via PINS
+    #    - delay: 50ms
+    #    - switch.turn_off: power_meanwell_button   # PowerOFF via CAN
+        
+  - platform: template
+    name: "Boost Charger in PSU Mode"
+    id: psu_charger_boost_master
+    icon: "mdi:power-cycle"
+    optimistic: true
+    on_turn_on:
+      then:
+        - text_sensor.template.publish:
+            id: psu_charger_status
+            state: "Start Bulk Charger"
+    on_turn_off:
+      then:
+        # set voltage to float value
+        - number.set:
+            id: meanwell_next_target_voltage 
+            value: !lambda "return id(mw_curve_fv).state;"
+        - text_sensor.template.publish:
+            id: psu_charger_status
+            state: "Off (Idle)"
+        - globals.set:
+            id: psu_charger_stage1_cc_start_ms
+            value: "0"
+        - globals.set:
+            id: psu_charger_stage2_cv_start_ms
+            value: "0"
+        - globals.set:
+            id: psu_charger_cv_confirm_counter
+            value: "0"
+
+  - platform: template
+    name: "Esp32 Enable Polling"
+    id: polling_switch
+    optimistic: true
+    restore_mode: ALWAYS_ON
+    on_turn_on:
+      - script.execute:
+          id: canbus_read_vendor_info
+      - component.resume: interval1
+      - component.resume: interval2
+      - component.resume: interval3
+    on_turn_off:
+      - component.suspend: interval1
+      - component.suspend: interval2
+      - component.suspend: interval3
+    entity_category: diagnostic
+
+    
+    # Master switch (pins in connector)
+  - platform: gpio
+    name: "_Power via Pins"
+    pin: 
+      number: ${gpio_pc817} 
+    id: main_power
+    restore_mode: RESTORE_DEFAULT_ON
+
+    # this switch allows to turn the meanwell on
+    # only turn it on if it is in "ready" state    
+  - platform: template
+    name: "_Power via CAN"
+    id: power_meanwell_button
+    turn_on_action:
+      - canbus.send: {use_extended_id: true, can_id: 0xC0103, data: [0x00, 0x00, 0x01]}
+      - delay: 50ms
+      - script.execute: {id: canbus_refresh, cmd: 0x00}      
+    turn_off_action:
+      - canbus.send: {use_extended_id: true, can_id: 0xC0103, data: [0x00, 0x00, 0x00]}
+      - delay: 50ms
+      - script.execute: {id: canbus_refresh, cmd: 0x00}
+
+    # Power Suply Mode
+  - platform: template
+    name: "_Power Suply Mode (AC ON-OFF to Apply)"
+    id: power_psu_mode
+    turn_on_action:  
+      - script.execute: { id: psu_mode_action, state: false }
+    turn_off_action: 
+      - script.execute: { id: psu_mode_action, state: true }
+          
+    # EEPROM Writing    
+  - platform: template
+    name: EEPROM writing
+    id: eeprom_writing
+    turn_on_action:  
+      - script.execute: { id: eeprom_writing_action, state: false }
+    turn_off_action: 
+      - script.execute: { id: eeprom_writing_action, state: true }
+          
+select:
+  - platform: template
+    name: "Charging Curve (Read Only, DIP SW position)"
+    id: charging_curve_select
+    options:
+      - "00 - Customized"
+      - "01 - Pre-defined, gel battery"
+      - "10 - Pre-defined, flooded battery"
+      - "11 - Pre-defined, AGM battery,LiFe04"
+    optimistic: true
+    #set_action:
+      #- canbus.send: {use_extended_id: true, can_id: 0xC0103, data: !lambda "return prepare_can_packet_set_2bits(0xB4, 0, id(mw_config_b4), id(charging_curve_select).index_of(x).value());"}
+      #- delay: 50ms
+      #- script.execute: {id: canbus_refresh, cmd: 0xB4}
+
+  - platform: template
+    name: "PowerOn behavior"
+    id: power_on_init
+    options:
+      - "OFF"
+      - "ON"
+      - "Last setting"
+      - "Not Used"
+    set_action:
+      - canbus.send: {use_extended_id: true, can_id: 0xC0103, data: !lambda "return prepare_can_packet_set_2bits(0xC2, 1, id(mw_config_c2), id(power_on_init).index_of(x).value());"}
+      - delay: 50ms
+      - script.execute: {id: canbus_refresh, cmd: 0xC2}
+
+
+# this state aggregates all flags needed into one flag so your home assistant logic knows if this thing is ready or not
+binary_sensor:
+  - platform: template
+    name: FAULT Over Temperature
+    id: mw_over_temperature
+    entity_category: diagnostic
+  - platform: template
+    name: FAULT Over Voltage
+    id: mw_output_over_voltage
+    entity_category: diagnostic
+  - platform: template
+    name:  FAULT Over Current
+    id: mw_output_over_current
+    entity_category: diagnostic
+  - platform: template
+    name:  FAULT Output short circuited
+    id: mw_output_short_circuited
+    entity_category: diagnostic
+  - platform: template
+    name:  FAULT AC abnormal
+    id: mw_ac_abnormal
+    entity_category: diagnostic
+  - platform: template
+    name:  Output Enabled
+    id: mw_output_turned_on
+  - platform: template
+    name:  FAULT internal temperature abnormal
+    id: mw_internal_temperature_abnormal
+    entity_category: diagnostic
+  - platform: template
+    name:  FAULT Temp compensation short circuited
+    id: mw_temperature_compensation_short_circuited
+    entity_category: diagnostic
+  - platform: template
+    name:  Charge No Battery Detected
+    id: mw_no_battery_detected
+  - platform: template
+    name:  Charge Fully charged
+    id: mw_fully_charged
+  - platform: template
+    name:  Charge wake up unfinished
+    id: mw_wake_up_unfinished
+  - platform: template
+    name:  DC output normal range
+    id: mw_dc_output_normal_range
+  - platform: template
+    name:  initial state
+    id: mw_initial_state
+  - platform: template
+    name:  FAULT EEPROM Error
+    id: mw_eeprom_access_error
+    entity_category: diagnostic
+  - platform: template
+    name:  Charge mode
+    id: mw_charger_mode
+  - platform: template
+    name:  disable write to eeprom
+    id: mw_disable_write_to_eeprom
+  - platform: template
+    name: Charge status Const Current
+    id: mw_const_current_status
+  - platform: template
+    name: Charge status Const Voltage
+    id: mw_const_voltage_status    
+  - platform: template
+    name: Charge Status Float Voltage
+    id: mw_float_voltage_status    
+  - platform: template
+    name: Charge timeout Float Voltage
+    id: mw_timeout_float_voltage_mode    
+  - platform: template
+    name: Charge timeout Const Voltage
+    id: mw_timeout_const_voltage_mode    
+  - platform: template
+    name: Charge timeout Const Current
+    id: mw_timeout_const_current_mode    
+  
+
+# these are the sensors for actual and target current and voltage
+sensor:
+  - platform: template
+    name: "Boost Running Time"
+    id: boost_running_time
+    unit_of_measurement: "s"
+    device_class: duration
+    state_class: measurement
+    accuracy_decimals: 0
+    update_interval: 5s
+    lambda: |-
+      if (id(psu_charger_stage1_cc_start_ms) == 0) {
+        return 0;
+      } else {
+        return (millis() - id(psu_charger_stage1_cc_start_ms)) / 1000.0f;
+      }
+
+  - platform: copy
+    source_id: meanwell_measured_voltage
+    id: meanwell_measured_voltage_filtered
+    name: "Measured Voltage (Filtered)"
+    internal: true 
+    accuracy_decimals: 2
+    filters:
+      - sliding_window_moving_average:
+          window_size: 10
+          send_every: 1
+
+  - platform: template
+    name: "_Measured Current"
+    id: meanwell_measured_current
+    unit_of_measurement: "A"
+    device_class: "current"
+    state_class: "measurement"
+    accuracy_decimals: 2
+    
+  - platform: template
+    name: "_Target Current"
+    id: meanwell_target_current
+    unit_of_measurement: "A"
+    device_class: "current"
+    state_class: "measurement"
+    accuracy_decimals: 2
+    
+  - platform: template
+    name: "_Measured Voltage"
+    id: meanwell_measured_voltage
+    unit_of_measurement: "V"
+    device_class: "voltage"
+    state_class: "measurement"
+    accuracy_decimals: 2
+    
+  - platform: template
+    name: AC Voltage
+    id: meanwell_ac_voltage
+    unit_of_measurement: "V"
+    device_class: "voltage"
+    state_class: "measurement"
+    accuracy_decimals: 2
+    
+  - platform: template
+    name: "_Target Voltage"
+    id: meanwell_target_voltage
+    unit_of_measurement: "V"
+    device_class: "voltage"
+    state_class: "measurement"
+    accuracy_decimals: 2
+    
+  - platform: template
+    name: "_Internal Temperature"
+    id: meanwell_temperature
+    unit_of_measurement: "°C"
+    device_class: "temperature"
+    state_class: "measurement"
+    accuracy_decimals: 2
+
+  - platform: template
+    name: "Charge curve"
+    id: mw_charge_curve
+    accuracy_decimals: 0
+    unit_of_measurement: ""   
+    entity_category: diagnostic
+
+  - platform: template
+    name: "Temp Compensation"
+    id: mw_temp_compensation
+    accuracy_decimals: 0
+    unit_of_measurement: ""
+    entity_category: diagnostic
+
+  - platform: wifi_signal # Reports the WiFi signal strength/RSSI in dB
+    name: "Esp32 WiFi Signal dB"
+    id: wifi_signal_db
+    update_interval: 60s
+    entity_category: diagnostic
+    
+    
+text_sensor:
+  - platform: template
+    name: "Build Time"
+    icon: "mdi:clock-check-outline"  
+    lambda: |-
+      return std::string(__DATE__) + " " + std::string(__TIME__);
+    update_interval: never
+    id: build_time
+    
+  - platform: template
+    name: "Virtual Charger Status"
+    id: psu_charger_status
+    icon: "mdi:battery-info"
+
+  - platform: template
+    name: "Manufacturer"
+    id: mw_manufacturer
+    entity_category: diagnostic
+
+  - platform: template
+    name: "Model Name"
+    id: mw_model_name
+    entity_category: diagnostic
+    
+  - platform: template
+    name: "Firmware"
+    id: mw_firmware_version  
+    entity_category: diagnostic
+      
+  - platform: template
+    name: "Serial"
+    id: mw_serial_number
+    entity_category: diagnostic
+    
+  - platform: template
+    name: "Manufacturer Date"
+    id: mw_manufacturer_date
+    entity_category: diagnostic
+    
+  - platform: template
+    name: "RAW SYSTEM_CONFIG 0x00C2"
+    id: mw_sytem_config_c2
+    entity_category: diagnostic
+
+  - platform: template
+    name: "RAW CURVE_CONFIG 0x00B4"
+    id: mw_curve_config_b4
+    entity_category: diagnostic
+
+
+# this is the defintion of the canbus interface for the esp32
+canbus:
+  - platform: esp32_can
+    tx_pin: ${gpio_ctx}
+    rx_pin: ${gpio_crx}
+    can_id: 0xc0003
+    use_extended_id: true
+    bit_rate: 250kbps
+    on_frame:
+    - can_id: 0xC0003
+      use_extended_id: true
+      then:
+      - lambda: |-
+          char slog[32];
+          strcpy(slog, "");
+          
+          switch(x[0]) { 
+            case 0x00:  sprintf(slog, "OPERATION: %02x",   update_sensor_byte(power_meanwell_button,     x)); break; 
+            case 0x20:  sprintf(slog, "VOUT_SET : %f V",   update_sensor_f001(meanwell_target_voltage,   x)); update_sensor_f001(meanwell_next_target_voltage, x); break;
+            case 0x30:  sprintf(slog, "IOUT_SET : %f A",   update_sensor_f001(meanwell_target_current,   x)); update_sensor_f001(meanwell_next_target_current, x); break;
+            case 0x50:  sprintf(slog, "READ_VIN : %f V",   update_sensor_f01 (meanwell_ac_voltage,       x)); break;
+            case 0x60:  sprintf(slog, "READ_VOUT: %f V",   update_sensor_f001(meanwell_measured_voltage, x)); break;
+            case 0x61:  sprintf(slog, "READ_IOUT: %f A",   update_sensor_f001(meanwell_measured_current, x)); break;
+            case 0x62:  sprintf(slog, "READ_TEMP: %f °C",  update_sensor_f01 (meanwell_temperature,      x)); break;
+            case 0xB0:  sprintf(slog, "READ_CC  : %f A",   update_sensor_f001(mw_curve_cc,               x)); break;  // CURVE_CC Constant current setting
+            case 0xB1:  sprintf(slog, "READ_CV  : %f V",   update_sensor_f001(mw_curve_cv,               x)); break;  // CURVE_CV Constant voltage setting
+            case 0xB2:  sprintf(slog, "READ_FV  : %f V",   update_sensor_f001(mw_curve_fv,               x));         // CURVE_FV Floating voltage setting  
+                        if (id(psu_autostart_voltage)==0.0) {
+                            ESP_LOGI("CAN_PARSER", "Float Voltage is %0.2f ", id(mw_curve_fv).state);
+                        }
+                        id(psu_autostart_voltage)=id(mw_curve_fv).state;
+                        break;
+            case 0xB3:  sprintf(slog, "READ_TC  : %f A",   update_sensor_f001(mw_curve_tc,               x)); break;  // CURVE_TC Taper current setting
+            case 0xB5:  sprintf(slog, "TMOUT_CC : %d Min", update_sensor_int16(mw_timeout_cc,            x)); break;  // CURVE_CC_TIMEOUT CC charge timeout setting of charging curve
+            case 0xB6:  sprintf(slog, "TMOUT_CV : %d Min", update_sensor_int16(mw_timeout_cv,            x)); break;  // CURVE_CV_TIMEOUT CV charge timeout setting of charging curve
+            case 0xB7:  sprintf(slog, "TMOUT_FV : %d Min", update_sensor_int16(mw_timeout_fv,            x)); break;  // CURVE_FV_TIMEOUT FV charge timeout setting of charging curve
+                        
+            case 0x40:  sprintf(slog, "FAULT_STATUS: ", "%02x", x[2]);
+                        id(mw_over_temperature                          ).publish_state((x[2] & 0x02) != 0);               // has to be 0
+                        id(mw_output_over_voltage                       ).publish_state((x[2] & 0x04) != 0);               // has to be 0
+                        id(mw_output_over_current                       ).publish_state((x[2] & 0x08) != 0);               // has to be 0
+                        id(mw_output_short_circuited                    ).publish_state((x[2] & 0x10) != 0);               // has to be 0
+                        id(mw_ac_abnormal                               ).publish_state((x[2] & 0x20) != 0);               // has to be 0
+                        id(mw_output_turned_on                          ).publish_state((x[2] & 0x40) == 0);
+                        id(mw_internal_temperature_abnormal             ).publish_state((x[2] & 0x80) != 0);               // has to be 0
+                        break;
+                        
+            case 0xB4:  sprintf(slog, "CURVE_CONFIG low  04 0x00B4 %02x; high 00 0x00B4 %02x", x[2], x[3]);
+                        id(mw_config_b4)=x[2]+256*x[3]; // save current value to correct options change
+                        id(mw_curve_config_b4                           ).publish_state(str_sprintf("L H: 0x%02x 0x%02x", x[2], x[3]));   // RAW Config 
+                        
+                        id(mw_charger_mode                              ).publish_state((x[2] & 0x80) != 0);   // 
+                        id(power_psu_mode                               ).publish_state((x[2] & 0x80) == 0);   // has to be 0 to allow control of current and voltage.
+                        id(mw_charge_curve                              ).publish_state(x[2] & 0x3);           // bit 0..1
+                        id(mw_temp_compensation                         ).publish_state(x[2] & 0xC);           // bit 2..3 
+                        
+                        id(charging_curve_select).publish_state(id(charging_curve_select).traits.get_options().at(x[2] & 0x3));
+                        
+                        id(mw_temp_compensation                         ).publish_state(x[3] & 0x1); 
+                        
+                        // str_sprintf("Timeouts Ind: CC %d; CV %d; FV %d", x[3] & 0x01, x[3] & 0x02, x[3] & 0x04);
+                        
+                        break;
+            case 0xB8:  // ESP_LOGD("CHG_STATUS low    00 0x00B8", "%02x", x[2]);
+                        // ESP_LOGD("CHG_STATUS high   00 0x00B8", "%02x", x[3]);
+                        id(mw_config_b8)=x[2]+256*x[3];                 // save current value to correct options change
+                        id(mw_fully_charged                             ).publish_state((x[2] & 0x01) != 0);
+                        id(mw_const_current_status                      ).publish_state((x[2] & 0x02) != 0);
+                        id(mw_const_voltage_status                      ).publish_state((x[2] & 0x04) != 0);
+                        id(mw_float_voltage_status                      ).publish_state((x[2] & 0x08) != 0);
+                        id(mw_wake_up_unfinished                        ).publish_state((x[2] & 0x40) != 0); 
+                        id(mw_temperature_compensation_short_circuited  ).publish_state((x[3] & 0x04) != 0);     // has to be 0
+                        id(mw_no_battery_detected                       ).publish_state((x[3] & 0x08) != 0);     // has to be 0, without battery no normal operation
+                        id(mw_timeout_const_current_mode                ).publish_state((x[3] & 0x20) != 0);     // 0 - no timeout
+                        id(mw_timeout_const_voltage_mode                ).publish_state((x[3] & 0x40) != 0);     // 0 - no timeout
+                        id(mw_timeout_float_voltage_mode                ).publish_state((x[3] & 0x80) != 0);     // 0 - no timeout
+                        break;
+            case 0xC1:  // ESP_LOGD("SYSTEM_STATUS     02 0x00C1", "%02x", x[2]);
+                        id(mw_dc_output_normal_range                    ).publish_state((x[2] & 0x02) != 0);     // has to be 1, should be in normal range
+                        id(mw_initial_state                             ).publish_state((x[2] & 0x20) != 0);
+                        id(mw_eeprom_access_error                       ).publish_state((x[2] & 0x40) != 0);     // has to be 0, if eeprom is broken meanwell stops working
+                        
+                        break;
+            case 0xC2:  // ESP_LOGD("SYSTEM_CONFIG low  03 0x00C2", "%02x", x[2]);
+                        // ESP_LOGD("SYSTEM_CONFIG high 04 0x00C2", "%02x", x[3]);
+                        id(mw_config_c2)=x[2]+256*x[3];                   // save current value to correct options change
+                        id(mw_sytem_config_c2                           ).publish_state(str_sprintf("L H: 0x%02x 0x%02x", x[2], x[3]));   // RAW Config 
+                        
+                        id(power_on_init).publish_state(id(power_on_init).traits.get_options().at( (x[2] >> 1) & 0x03 ));   // bit 1..2: Initial operational behavior. 0-OFF, 1-ON, 2-Last setting, 3-not used                        
+                        id(mw_disable_write_to_eeprom                   ).publish_state((x[3] & 0x04) != 0);     // has to be 1, needed to protect eeprom
+                        id(eeprom_writing                               ).publish_state((x[3] & 0x04) == 0);   
+
+                        break;
+
+            case 0x80: // Manufacturer
+            case 0x81:
+            case 0x82: // Model Name
+            case 0x83:
+            case 0x87: // Serial Number
+            case 0x88:
+              // ESP_LOGD("TEXT", "%02X TEXT: %c%c%c%c%c%c", x[0], x[2], x[3], x[4], x[5], x[6], x[7]);
+              for (int i = 2; i < x.size(); i++) {
+                if (x[i] != 0x00) {
+                    id(mw_string_buffer) += (char)x[i]; 
+                }
+              }
+
+              if (x[0] == 0x81) id(mw_manufacturer ).publish_state(id(mw_string_buffer));
+              if (x[0] == 0x83) id(mw_model_name   ).publish_state(id(mw_string_buffer));
+              if (x[0] == 0x88) id(mw_serial_number).publish_state(id(mw_string_buffer));
+              // ESP_LOGD("TEXT", "%02X : %s", x[0], id(mw_string_buffer).c_str());
+              if (x[0] == 0x81 || x[0] == 0x83 || x[0]== 0x88) id(mw_string_buffer) = ""; 
+              break;
+            case 0x84: // FW Version
+              // ESP_LOGD("FIRMWARE", "%02X TEXT: %02X %02X %02X %02X %02X %02X", x[0], x[2], x[3], x[4], x[5], x[6], x[7]);
+              id(mw_firmware_version).publish_state( str_sprintf("v%.1f.%.1f", x[2] / 10.0f, x[3] / 10.0f) );
+              break;
+
+            case 0x86: // Manufacturer date
+              // ESP_LOGD("TEXT", "%02X TEXT: %c%c%c%c%c%c", x[0], x[2], x[3], x[4], x[5], x[6], x[7]);
+              
+              id(mw_string_buffer) = "";
+              for (int i = 2; i < x.size(); i++) {
+                if (x[i] != 0x00) {
+                    id(mw_string_buffer) += (char)x[i]; 
+                }
+              }
+              id(mw_manufacturer_date).publish_state(id(mw_string_buffer));
+              id(mw_string_buffer) = ""; 
+              break;
+          }
+
+          if (slog[0] != '\0') {
+            ESP_LOGD("CAN_PARSER", "%s", slog);
+          }
+    
+interval:
+  - interval: 2s
+    id: interval1
+    startup_delay: 11s
+    then:
+      - script.execute: canbus_read_priority1
+          
+  - interval: 15s
+    id: interval2
+    startup_delay: 12s
+    then:
+      - script.execute: canbus_read_priority2
+
+  - interval: 33s
+    id: interval3
+    startup_delay: 12s
+    then:
+      - script.execute: canbus_charging_params
+
+
+  - interval: 3s
+    then:
+      - script.execute: psu_charger_boost_loop
